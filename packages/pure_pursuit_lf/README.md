@@ -1,0 +1,1 @@
+This package implements pure pursuit controller for lane following in duckietown.
