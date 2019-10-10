@@ -33,9 +33,10 @@ class lane_controller(object):
         self.pub_radius_limit = rospy.Publisher("~radius_limit", BoolStamped, queue_size=1)
 
         self.test_pub = rospy.Publisher("~test_pub", BoolStamped, queue_size=1)
-        self.msg_test_pub = BoolStamped()
-        self.msg_test_pub.data = True
-        self.test_pub.publish(self.msg_test_pub)
+        self.test_pub_msg = BoolStamped()
+        self.test_pub_msg.data = True
+        self.test_pub.publish(self.test_pub_msg)
+        
 
         # Subscriptions
         self.sub_lane_reading = rospy.Subscriber("~lane_pose", LanePose, self.PoseHandling, "lane_filter", queue_size=1)

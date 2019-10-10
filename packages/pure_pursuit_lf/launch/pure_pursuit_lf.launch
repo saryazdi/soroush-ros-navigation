@@ -19,5 +19,7 @@
 		<arg name="vehicle_avoidance" default="false"/>
 		<arg name="/lane_following/lane_controller" default="false"/>
 	</include>
-	<node pkg="pure_pursuit_lf" type="pp_lane_controller.py" name="pp_lane_controller" required="true"/>
+	<Group>
+		<node pkg="pure_pursuit_lf" type="pp_lane_controller.py" name="pp_lane_controller" required="true"/>
+	</Group>
 </launch>
