@@ -24,7 +24,7 @@ class pp_lane_controller(object):
         self.bridge = CvBridge()
 
         # Publication
-        self.path_trajectory = rospy.Publisher("/default/pp_lane_controller/path_trajectory", CompressedImage, queue_size=1)
+        self.path_trajectory = rospy.Publisher("/default/pp_lane_controller/path_trajectory", Image, queue_size=1)
         
         # Subscriptions
         self.sub_image = rospy.Subscriber("/default/anti_instagram_node/corrected_image/compressed", CompressedImage, self.processImage, queue_size=1)
