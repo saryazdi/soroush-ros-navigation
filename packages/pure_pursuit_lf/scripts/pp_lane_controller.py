@@ -30,10 +30,6 @@ class pp_lane_controller(object):
         self.sub_image = rospy.Subscriber("/default/anti_instagram_node/corrected_image/compressed", CompressedImage, self.processImage, queue_size=1)
         # self.sub_lines = rospy.Subscriber("/default/line_detector_node/segment_list", SegmentList, self.findTrajectory, queue_size=1)
 
-        self.msg_radius_limit = BoolStamped()
-        self.msg_radius_limit.data = self.use_radius_limit
-        self.pub_radius_limit.publish(self.msg_radius_limit)
-
         # safe shutdown
         rospy.on_shutdown(self.custom_shutdown)
 
