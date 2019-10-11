@@ -11,6 +11,7 @@ from sensor_msgs.msg import CompressedImage, Image
 import time
 import numpy as np
 import cv2
+from cv_bridge import CvBridge, CvBridgeError
 
 class pp_lane_controller(object):
 
