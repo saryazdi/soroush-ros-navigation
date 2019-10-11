@@ -42,7 +42,7 @@ class pp_lane_controller(object):
     #     self.stop_line_distance = np.sqrt(msg.stop_line_point.x**2 + msg.stop_line_point.y**2 + msg.stop_line_point.z**2)
     #     self.stop_line_detected = msg.stop_line_detected
 
-    def processImage(self,param_name,default_value):
+    def processImage(self, image_msg):
         # Decode from compressed image with OpenCV
         try:
             image_cv = bgr_from_jpg(image_msg.data)
