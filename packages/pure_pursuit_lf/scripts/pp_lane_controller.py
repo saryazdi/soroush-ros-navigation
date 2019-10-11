@@ -12,13 +12,17 @@ import time
 import numpy as np
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
+from line_detector.line_detector_plot import color_segment, drawLines
 
 class pp_lane_controller(object):
 
     def __init__(self):
         self.node_name = rospy.get_name()
 
-        # self.image_size = rospy.get_param('~img_size')
+        self.image_size = rospy.get_param('/default/line_detector_node/img_size')
+        self.top_cutoff = rospy.get_param('/default/line_detector_node/top_cutoff')
+
+        self.segment_list = None
 
         # Constructor of line detector
         self.bridge = CvBridge()
@@ -28,16 +32,15 @@ class pp_lane_controller(object):
         
         # Subscriptions
         self.sub_image = rospy.Subscriber("/default/anti_instagram_node/corrected_image/compressed", CompressedImage, self.processImage, queue_size=1)
-        # self.sub_lines = rospy.Subscriber("/default/line_detector_node/segment_list", SegmentList, self.findTrajectory, queue_size=1)
+        self.sub_lines = rospy.Subscriber("/default/line_detector_node/segment_list", SegmentList, self.findTrajectory, queue_size=1)
 
         # safe shutdown
         rospy.on_shutdown(self.custom_shutdown)
 
         rospy.loginfo("[%s] Initialized " % (rospy.get_name()))
 
-    # def findTrajectory(self, msg):
-    #     self.stop_line_distance = np.sqrt(msg.stop_line_point.x**2 + msg.stop_line_point.y**2 + msg.stop_line_point.z**2)
-    #     self.stop_line_detected = msg.stop_line_detected
+    def findTrajectory(self, segment_list):
+        self.segment_list = segment_list
 
     def processImage(self, image_msg):
         # Decode from compressed image with OpenCV
@@ -50,14 +53,45 @@ class pp_lane_controller(object):
         # Resize and crop image
         hei_original, wid_original = image_cv.shape[0:2]
 
-        # if self.image_size[0] != hei_original or self.image_size[1] != wid_original:
-        # image_cv = cv2.resize(image_cv, (self.image_size[1], self.image_size[0]),
-        #                         interpolation=cv2.INTER_NEAREST)
-        image_cv = cv2.resize(image_cv, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_LINEAR)
-        image_cv = cv2.GaussianBlur(image_cv,(5,5),0)
+        if self.image_size[0] != hei_original or self.image_size[1] != wid_original:
+            image_cv = cv2.resize(image_cv, (self.image_size[1], self.image_size[0]),
+                                    interpolation=cv2.INTER_NEAREST)
+        image_cv = image_cv[self.top_cutoff:,:,:]
+
+        # arr_cutoff = np.array((0, self.top_cutoff, 0, self.top_cutoff))
+        # arr_ratio = np.array((1./self.image_size[1], 1./self.image_size[0], 1./self.image_size[1], 1./self.image_size[0]))
+
+        # image_cv = cv2.resize(image_cv, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_LINEAR)
+        # image_cv = cv2.GaussianBlur(image_cv,(5,5),0)
+        white_lines = []
+        yellow_lines = []
+        red_lines = []
+        if self.segment_list is not None:
+            for segment in self.segment_list.segments:
+                color = segment.color
+                x1 = int(segment.pixels_normalized[0].x * self.image_size[1])
+                y1 = int((segment.pixels_normalized[0].y * self.image_size[0]) - self.top_cutoff)
+                x2 = int(segment.pixels_normalized[1].x * self.image_size[1])
+                y2 = int((segment.pixels_normalized[1].y * self.image_size[0]) - self.top_cutoff)
+                norm_x = segment.normal.x
+                norm_y = segment.normal.y
+                if (color == Segment.WHITE):
+                    white_lines.append([x1, y1, x2, y2])
+                elif (color == Segment.YELLOW):
+                    yellow_lines.append([x1, y1, x2, y2])
+                elif (color == Segment.RED):
+                    red_lines.append([x1, y1, x2, y2])
+                else:
+                    print('Wtf color')
 
          # Publish the frame with lines
-        image_msg_out = self.bridge.cv2_to_imgmsg(image_cv, "bgr8")
+        image_with_lines = np.copy(image_cv)
+        drawLines(image_with_lines, white_lines, (0, 0, 0))
+        drawLines(image_with_lines, yellow_lines, (255, 0, 0))
+        drawLines(image_with_lines, red_lines, (0, 255, 0))
+
+        # image_msg_out = self.bridge.cv2_to_imgmsg(image_cv, "bgr8")
+        image_msg_out = self.bridge.cv2_to_imgmsg(image_with_lines, "bgr8")
         image_msg_out.header.stamp = image_msg.header.stamp
         self.path_trajectory.publish(image_msg_out)
         
