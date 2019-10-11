@@ -17,7 +17,7 @@ class pp_lane_controller(object):
     def __init__(self):
         self.node_name = rospy.get_name()
 
-        self.image_size = rospy.get_param('~img_size')
+        # self.image_size = rospy.get_param('~img_size')
 
         # Constructor of line detector
         self.bridge = CvBridge()
@@ -53,10 +53,10 @@ class pp_lane_controller(object):
         # Resize and crop image
         hei_original, wid_original = image_cv.shape[0:2]
 
-        if self.image_size[0] != hei_original or self.image_size[1] != wid_original:
-            image_cv = cv2.resize(image_cv, (self.image_size[1], self.image_size[0]),
-                                   interpolation=cv2.INTER_NEAREST)
-        
+        # if self.image_size[0] != hei_original or self.image_size[1] != wid_original:
+        # image_cv = cv2.resize(image_cv, (self.image_size[1], self.image_size[0]),
+        #                         interpolation=cv2.INTER_NEAREST)
+        image_cv = cv2.resize(image_cv, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_LINEAR)
         image_cv = cv2.GaussianBlur(image_cv,(5,5),0)
 
          # Publish the frame with lines
