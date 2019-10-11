@@ -123,6 +123,6 @@ if __name__ == "__main__":
 
     rospy.init_node("pp_lane_controller", anonymous=False)  # adapted to sonjas default file
 
-    lane_control_node = lane_controller()
+    pp_lane_controller = pp_lane_controller()
     rospy.spin()
     
