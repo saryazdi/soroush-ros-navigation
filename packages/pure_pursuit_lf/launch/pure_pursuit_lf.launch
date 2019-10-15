@@ -19,5 +19,16 @@
 		<arg name="vehicle_avoidance" default="false"/>
 		<arg name="/lane_following/lane_controller" default="false"/>
 	</include>
-	<node pkg="pure_pursuit_lf" type="pp_lane_controller.py" name="pp_lane_controller" required="true"/>
+
+	<group ns="$(arg veh)">
+		<remap from="pp_lane_controller/car_cmd" to="joy_mapper_node/car_cmd"/>
+		<remap from="pp_lane_controller/corrected_image/compressed" to="anti_instagram_node/corrected_image/compressed"/>
+		<remap from="pp_lane_controller/segment_list" to="line_detector_node/segment_list"/>
+		<remap from="pp_lane_controller/lane_pose" to="lane_filter_node/lane_pose"/>
+		<remap from="pp_lane_controller/lineseglist_out" to="ground_projection/lineseglist_out"/>
+		<remap from="pp_lane_controller/seglist_filtered" to="lane_filter_node/seglist_filtered"/>
+		<node pkg="pure_pursuit_lf" type="pp_lane_controller.py" name="pp_lane_controller" output="screen" required="true">
+			<param name="verbose" value="$(arg verbose)"/>
+		</node>
+	</group>
 </launch>
