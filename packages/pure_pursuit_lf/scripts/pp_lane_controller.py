@@ -36,15 +36,32 @@ class pp_lane_controller(object):
 		self.num_yellow_subsamples = 100
 		self.num_white_subsamples = 100
 		self.v = 0.3
-		self.timer = Timer(0.25 / self.v)
-		self.bad_turn_thresh = 0.6
+
+		right_turn_time = 0.6 / self.v
+		left_turn_time = 0.6 / self.v
+		bad_turn_time = 1.0 / self.v
+
+		self.encounteredRightLinetimer = Timer(right_turn_time)
+		self.encounteredLeftLinetimer = Timer(left_turn_time)
+		self.encounteredBadTurntimer = Timer(bad_turn_time)
+
+		self.noiseCombatTimer = Timer(0.75)
 
 		self.dist_list = []
 		self.angle_list = []
 		self.commanded_v_list = []
 		self.commanded_w_list = []
+		self.buffer_list = []
+		self.buffer_time = 0.85 / self.v
 
 		self.verbose = rospy.get_param('~verbose', False)
+
+		if self.verbose:
+			self.bridge = CvBridge()
+			# publishers
+			self.pub_path_points = rospy.Publisher("~path_points", Image, queue_size=1)
+			# subscribers
+			self.sub_lines = rospy.Subscriber("~segment_list", SegmentList, self.updateLineSeg, queue_size=1)
 
 		self.not_moving = True
 
@@ -71,9 +88,11 @@ class pp_lane_controller(object):
 		self.verbose = rospy.get_param('~verbose', False)
 
 		if self.verbose != old_verbose:
+			
+			self.bridge = CvBridge()
+
 			self.loginfo('Verbose is now %r' % self.verbose)
-		
-		if self.verbose:
+			
 			# publishers
 			self.pub_path_points = rospy.Publisher("~path_points", Image, queue_size=1)
 
@@ -131,6 +150,8 @@ class pp_lane_controller(object):
 		
 		# self.loginfo('num_yellow: %s' % str(num_yellow))
 		# self.loginfo('num_white: %s' % str(num_white))
+		if len(self.buffer_list) != 0:
+			self.buffer_list = [x for x in self.buffer_list if (time.time() - x) <= self.buffer_time]
 
 		if self.not_moving:
 			car_cmd_msg = Twist2DStamped()
@@ -149,27 +170,45 @@ class pp_lane_controller(object):
 			t_hat = (white_points_p1 - white_points_p0) / np.linalg.norm(white_points_p1 - white_points_p0, axis=1, keepdims=True)
 			n_hat = t_hat[:, ::-1].copy()
 			n_hat[:, 1] *= -1
-			
+
 			half_lane_width = 0.5 * self.lane_width
 			if self.white_line_orientation is 'RIGHT':
 				invert_ind = np.einsum('ij,ij->i', white_points_p0, n_hat) > 0
 				t_hat[invert_ind] *= -1
 				n_hat[invert_ind] *= -1
-
+				normal_dir = n_hat
 				left_white_line_ind = np.ones(invert_ind.shape) < 0
-				abs_pairwise_angles = abs(t_hat.dot(t_hat.T))
-				thresh = 0.3
-				# if (np.mean(abs_pairwise_angles < 0.1) > thresh) and (np.mean(abs_pairwise_angles > 0.9) > thresh):
-				if (np.mean(abs_pairwise_angles < self.bad_turn_thresh) > thresh):
-					# self.loginfo('BAD TURN SPOTTED!')
-					self.timer.startTimer()
 
-				if self.timer.running(): # beautiful open-loop hack
-					closest_white_ind = np.argmin(np.linalg.norm(white_points_p0, axis=1))
-					perp_points = abs_pairwise_angles[closest_white_ind] < self.bad_turn_thresh
-					n_hat[perp_points] *= -1
-					t_hat[perp_points] *= -1
-					half_lane_width *= 2
+				# closest_white_ind = np.argmin(np.linalg.norm(white_points_p0, axis=1))
+				# abs_pairwise_angles = abs(t_hat[closest_white_ind].dot(t_hat.T))
+				# thresh = 0.7
+				# # if (np.mean(abs_pairwise_angles < 0.1) > thresh) and (np.mean(abs_pairwise_angles > 0.9) > thresh):
+				# white_points_x_avg = np.mean(white_points_p0[:, 0])
+				# white_points_x_std = np.std(white_points_p0[:, 0])
+				# white_points_spread = np.mean(abs(white_points_p0[:,0] - white_points_x_avg) > 0.2)
+				# spread_thresh = 0.4
+				# if (np.mean(abs_pairwise_angles < self.bad_turn_thresh) > thresh):
+				if (self.encounteringLineHeadOn(white_points_p0, n_hat, t_hat)):
+					# self.buffer_list.append(time.time())
+					# self.loginfo(len(self.buffer_list))
+					self.encounteredRightLinetimer.startTimer()
+				
+				if (self.encounteringBadTurn(white_points_p0, white_points_p1, n_hat, t_hat) or self.encounteredBadTurntimer.running()):
+					self.loginfo('BADTURN!')
+					self.encounteredBadTurntimer.startTimer()
+					normal_dir = np.array([1, 1])
+
+
+				# if len(self.buffer_list) > 2:
+					# self.encounteredRightLinetimer.startTimer()
+					# self.loginfo('NOPE')
+
+				# if self.timer.running(): # beautiful open-loop hack
+				# 	closest_white_ind = np.argmin(np.linalg.norm(white_points_p0, axis=1))
+				# 	perp_points = abs_pairwise_angles[closest_white_ind] < self.bad_turn_thresh
+				# 	n_hat[perp_points] *= -1
+				# 	t_hat[perp_points] *= -1
+					# half_lane_width *= 2
 
 					# sleep_dist = 0.4
 					# time.sleep(sleep_dist / self.v) 
@@ -185,9 +224,14 @@ class pp_lane_controller(object):
 				left_white_line_ind = np.ones(invert_ind.shape) > 0
 				t_hat[invert_ind] *= -1
 				n_hat[invert_ind] *= -1
+				normal_dir = n_hat
+
+				if (self.encounteringLineHeadOn(white_points_p0, n_hat, t_hat)):
+					self.encounteredLeftLinetimer.startTimer()
 
 			# compute path points
-			normal_step = n_hat * half_lane_width
+			normal_step = normal_dir * half_lane_width
+			
 			p0_path_points = white_points_p0 + normal_step
 			p1_path_points = white_points_p1 + normal_step
 			
@@ -196,11 +240,7 @@ class pp_lane_controller(object):
 			if path_points.shape[0] < 2:
 				return
 
-			# find closest point to lookup distance
-			path_points_copy = path_points.copy()
-			# path_points_copy[path_points_copy[:,0] < 0] -= np.array([self.lookup_distance, 0])
-			path_points_copy[path_points_copy[:,0] < 0] = 100
-			target_point_ind = np.argmin(abs((path_points_copy[:, 0] ** 2) + (path_points_copy[:, 1] ** 2) - (self.lookup_distance ** 2)))
+			target_point_ind = self.findTargetPoint(path_points)
 
 		else:
 			if self.verbose:
@@ -283,9 +323,7 @@ class pp_lane_controller(object):
 				return
 			
 			# find closest point to lookup distance
-			path_points_copy = path_points.copy()
-			path_points_copy[path_points_copy[:,0] < 0] = 100
-			target_point_ind = np.argmin(abs((path_points_copy[:, 0] ** 2) + (path_points_copy[:, 1] ** 2) - (self.lookup_distance ** 2)))
+			target_point_ind = self.findTargetPoint(path_points)
 
 
 		follow_dist = np.linalg.norm(path_points[target_point_ind])
@@ -348,13 +386,89 @@ class pp_lane_controller(object):
 					i, j = self.point2pixel(point, img_size, min_val, max_val)
 					self.ground_image[i-1:i+1, j-1:j+1, 1:] = 255
 
+			if self.ground_image is not None:
+				image_msg_out = self.bridge.cv2_to_imgmsg(self.ground_image, "bgr8")
+				# image_msg_out.header.stamp = image_msg.header.stamp
+				self.pub_path_points.publish(image_msg_out)
+
+	def encounteringLineHeadOn(self, white_points_p0, n_hat, t_hat):
+		# closest_white_ind = np.argmin(np.linalg.norm(white_points_p0, axis=1))
+		# abs_pairwise_angles = abs(t_hat[closest_white_ind].dot(t_hat.T))
+		# angle_thresh = 0.4
+		# count_thresh = 0.3
+		# # if (np.mean(abs_pairwise_angles < 0.1) > thresh) and (np.mean(abs_pairwise_angles > 0.9) > thresh):
+		# # white_points_x_avg = np.mean(white_points_p0[:, 0])
+		# # white_points_x_std = np.std(white_points_p0[:, 0])
+		# # white_points_spread = np.mean(abs(white_points_p0[:,0] - white_points_x_avg) > 0.2)
+		# # spread_thresh = 0.4
+		# return np.mean(abs_pairwise_angles < angle_thresh) > count_thresh
+
+		white_points_norms = np.linalg.norm(white_points_p0, axis=1)
+		closest_white_ind = np.argmin(white_points_norms)
+		closest_point_vec = white_points_p0[closest_white_ind] / white_points_norms[closest_white_ind]
+		# avg_white_points = np.mean(white_points_p0, axis=0)
+		return (closest_point_vec.dot(np.array([1, 0])) > 0.9)
+
+	def encounteringBadTurn(self, white_points_p0, white_points_p1, n_hat, t_hat):
+		p0_path_points = white_points_p0 + n_hat
+		p1_path_points = white_points_p1 + n_hat
+		white_points = np.vstack([white_points_p0, white_points_p1])
+		path_points = np.vstack([p0_path_points, p1_path_points])
+		avg_path_point = np.mean(path_points, axis=0)
+		avg_white_point = np.mean(white_points, axis=0)
+		return ((avg_path_point[0] < avg_white_point[0]) and (avg_path_point[1] < avg_white_point[1]))
+
 	def point2pixel(self, point, img_size, min_val, max_val):
 		i = img_size - int((point[0] - min_val) * img_size / (max_val - min_val))
 		j = img_size - int((point[1] - min_val) * img_size / (max_val - min_val))
 		i = np.clip(i, 1, img_size-1)
 		j = np.clip(j, 1, img_size-1)
 		return (i, j)
-	
+
+	def findTargetPoint(self, path_points):
+		# find closest point to lookup distance
+		path_points_copy = path_points.copy()
+		# path_points_copy[path_points_copy[:,0] < 0] -= np.array([self.lookup_distance, 0])
+		# path_points_copy[path_points_copy[:,0] < 0] = 100
+		avg_path_point = np.mean(path_points, axis=0)
+		avg_path_point_sign = np.sign(avg_path_point)
+		path_points_spread = np.mean(abs(path_points[:,0] - avg_path_point[0]) > 0.2)
+		spread_thresh = 0.4
+		# if (path_points_spread > spread_thresh):
+		if self.encounteredBadTurntimer.running():
+			heuristic = 0.5 * path_points_copy[:, 1]
+			target_point_ind = np.argmin(abs((path_points_copy[:, 0] ** 2) + (path_points_copy[:, 1] ** 2) - (self.lookup_distance ** 2)) + heuristic)
+			self.encounteredLeftLinetimer.startTimer()
+			self.loginfo('rightmost')
+
+		elif self.encounteredRightLinetimer.running():
+			# target_point_ind = np.argmax(path_points_copy[:, 1])
+			heuristic = 0.5 * path_points_copy[:, 1]
+			target_point_ind = np.argmin(abs((path_points_copy[:, 0] ** 2) + (path_points_copy[:, 1] ** 2) - (self.lookup_distance ** 2)) - heuristic)
+			self.loginfo('leftmost')
+
+		elif (self.encounteredLeftLinetimer.running()) or (avg_path_point_sign[0] < 0.):
+			# mismatch0 = np.sign(path_points_copy[:,0]) != avg_path_point[0]
+			# mismatch1 = path_points_copy[:,1] > 0
+			# reject_mask = np.bitwise_or(mismatch0, mismatch1)
+			# path_points_copy[reject_mask] = 100
+			# target_point_ind = np.argmin(path_points_copy[:, 1])
+			heuristic = 0.5 * path_points_copy[:, 1]
+			target_point_ind = np.argmin(abs((path_points_copy[:, 0] ** 2) + (path_points_copy[:, 1] ** 2) - (self.lookup_distance ** 2)) + heuristic)
+			self.encounteredLeftLinetimer.startTimer()
+			self.loginfo('rightmost')
+
+		# elif (abs(avg_path_point[1]) < 0.25) and ((np.max(path_points[:,0]) - np.min(path_points[:,0])) < 0.25) and (avg_path_point[1] < 0.1):
+		# 	target_point_ind = np.argmin(path_points_copy[:, 1])
+		# 	self.noiseCombatTimer.startTimer()
+		# 	self.loginfo('Close call!')
+		else:
+			mismatch = np.sign(path_points_copy) != avg_path_point_sign
+			reject_mask = np.bitwise_or(mismatch[:,0], mismatch[:,1])
+			path_points_copy[reject_mask] = 100
+			target_point_ind = np.argmin(abs((path_points_copy[:, 0] ** 2) + (path_points_copy[:, 1] ** 2) - (self.lookup_distance ** 2)))
+		return target_point_ind
+
 	def _vec2angle(self, vector):
 		return np.arctan2(vector[1], vector[0])
 
@@ -419,12 +533,18 @@ class pp_lane_controller(object):
 		self.plot_velocities()
 		self.plot_angular_velocities()
 
+		# Stop the duckie
+		car_cmd_msg = Twist2DStamped()
+		car_cmd_msg.v = 0
+		car_cmd_msg.omega = 0
+		self.pub_car_cmd.publish(car_cmd_msg)
+		self.not_moving = True
+
 		# Stop listening
 		self.sub_lane_pose.unregister()
 		self.sub_gp_lines.unregister()
 		self.sub_filtered_lines.unregister()
 		if self.verbose:
-			self.sub_image.unregister()
 			self.sub_lines.unregister()
 
 		rospy.sleep(0.5)    #To make sure that it gets published.
@@ -487,9 +607,10 @@ def drawArrowedLines(bgr, lines, paint, p1_color=(0,255,0), p2_color=(0,0,255)):
 				cv2.circle(bgr, (x2,y2), 2, p2_color)
 
 class Timer():
-	def __init__(self, time_amount):
+	def __init__(self, time_amount, thresh_time=None):
 		self.time_amount = time_amount
 		self.start_time = None
+		self.thresh_time = thresh_time
 
 	def startTimer(self):
 		if not self.running():
@@ -498,14 +619,18 @@ class Timer():
 	def running(self):
 		if self.start_time is None:
 			return False
-		if (time.time() - self.start_time) > self.time_amount:
+		return (time.time() - self.start_time) < self.time_amount
+	
+	def pastThreshTime(self):
+		if self.thresh_time is None:
+			return
+		if not self.running():
 			return False
-		else:
-			return True
+		return (time.time() - self.start_time) > self.thresh_time
 
 if __name__ == "__main__":
 
-	rospy.init_node("pp_lane_controller", anonymous=False)  # adapted to sonjas default file
+	rospy.init_node("pp_lane_controller", anonymous=False)
 
 	pp_lane_controller = pp_lane_controller()
 	rospy.spin()
