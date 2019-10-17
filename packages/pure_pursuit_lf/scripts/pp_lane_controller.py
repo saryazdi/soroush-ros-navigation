@@ -316,9 +316,6 @@ class pp_lane_controller(object):
 		self.saveArray(points, '/data/log/PP_angular_velocities.txt')
 	
 	def saveArray(self, arr, filename):
-		# if os.path.exists(filename):
-		# 	os.remove(filename)
-		self.loginfo('arrayshape: %s' % str(arr.shape))
 		with open(filename, 'w') as f:
 			for x in arr:
 				f.write("%s, " % str(x[0]))
