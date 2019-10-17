@@ -3,19 +3,11 @@ import math
 import time
 import numpy as np
 import rospy
-from duckietown_msgs.msg import (BoolStamped, FSMState, Segment,
-	SegmentList, Vector2D)
-from duckietown_msgs.msg import Twist2DStamped, LanePose, WheelsCmdStamped, BoolStamped, FSMState, StopLineReading
-from duckietown_utils.jpg import bgr_from_jpg
-from sensor_msgs.msg import CompressedImage, Image
-import time
-import numpy as np
 import cv2
-from cv_bridge import CvBridge, CvBridgeError
-from line_detector.line_detector_plot import color_segment, drawLines
-from scipy.spatial import ConvexHull
+from duckietown_msgs.msg import Twist2DStamped, LanePose, Segment, SegmentList
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
 import matplotlib.pyplot as plt
-# rostopic pub /default/joy_mapper_node/car_cmd
 
 class pp_lane_controller(object):
 
@@ -28,16 +20,19 @@ class pp_lane_controller(object):
 		self.max_val = -100
 		self.lane_width = 0.4
 		self.lookahead_distance = 0.25
-		self.v = 0.4
+		self.v = 0.5
 		self.omega_gain = 3
 		# self.omega_gain = 2
 		self.temp = 2
 		self.momentum = 0.8
+		self.plotted = False
 
 		self.dist_list = []
 		self.angle_list = []
 		self.commanded_v_list = []
 		self.commanded_w_list = []
+		self.start_time = time.time()
+		self.t_error_publish = time.time()
 
 		self.verbose = rospy.get_param('~verbose', False)
 
@@ -45,6 +40,10 @@ class pp_lane_controller(object):
 			self.bridge = CvBridge()
 			# publishers
 			self.pub_path_points = rospy.Publisher("~path_points", Image, queue_size=1)
+			self.pub_cross_track = rospy.Publisher("~crosstrack_error", Image, queue_size=1)
+			self.pub_angle_error = rospy.Publisher("~angle_error", Image, queue_size=1)
+			self.pub_velocities = rospy.Publisher("~velocities", Image, queue_size=1)
+			self.pub_angular_velocities = rospy.Publisher("~angular_velocities", Image, queue_size=1)
 
 		self.not_moving = True
 
@@ -135,10 +134,6 @@ class pp_lane_controller(object):
 
 		half_lane_width = 0.5 * self.lane_width
 		
-		# avg_lane_width = np.mean(lane_width)
-		# if not np.isnan(avg_lane_width):
-		# 	self.lane_width = 0.5 * (avg_lane_width + self.lane_width)
-		
 		# compute path points
 		yellow_path_points = None
 		white_path_points = None
@@ -179,9 +174,18 @@ class pp_lane_controller(object):
 		v, omega = self.pure_pursuit(target_point, np.array([0, 0]), np.pi / 2, follow_dist=lookahead_distance)
 
 		# Compute crostrack and angle error
-		self.commanded_w_list.append(omega)
-		self.commanded_v_list.append(v)
+		t = time.time()
+		self.commanded_w_list.append([omega, t - self.start_time])
+		self.commanded_v_list.append([v, t - self.start_time])
 
+		if (self.verbose) and (len(self.commanded_v_list) > 0) and (len(self.dist_list) > 0):
+			if ((time.time() - self.t_error_publish) > 10):
+				self.plotErrors()
+				self.t_error_publish = time.time()
+				self.plotted = True
+			if self.plotted:
+				self.publishErrors()
+		
 		car_cmd_msg = Twist2DStamped()
 		car_cmd_msg.header = gp_segment_list.header
 		car_cmd_msg.v = v
@@ -241,8 +245,9 @@ class pp_lane_controller(object):
 		return dists
 
 	def updatePose(self, lane_pose):
-		self.dist_list.append(lane_pose.d)
-		self.angle_list.append(lane_pose.phi)
+		t = time.time()
+		self.dist_list.append([lane_pose.d, t - self.start_time])
+		self.angle_list.append([lane_pose.phi, t - self.start_time])
 
 	def pure_pursuit(self, curve_point, pos, angle, follow_dist=0.25):
 		omega = 0.
@@ -279,13 +284,33 @@ class pp_lane_controller(object):
 	def loginfo(self, s):
 		rospy.loginfo('[%s] %s' % (self.node_name, s))
 	
+	def plotErrors(self):
+		self.plot_crosstrack_error()
+		self.plot_angle_error()
+		self.plot_velocities()
+		self.plot_angular_velocities()
+
+	def publishErrors(self):
+		self.pub_cross_track.publish(self.imreadAndBridge('PP_crosstrack_error.jpg'))
+		self.pub_angle_error.publish(self.imreadAndBridge('PP_angle_error.jpg'))
+		self.pub_velocities.publish(self.imreadAndBridge('PP_velocities.jpg'))
+		self.pub_angular_velocities.publish(self.imreadAndBridge('PP_angular_velocities.jpg'))
+
+	def imreadAndBridge(self, img_loc):
+		return self.bridge.cv2_to_imgmsg(cv2.imread(img_loc), "bgr8")
+
 	def plot_crosstrack_error(self):
 		fig = plt.figure()
 		color = 'tab:blue'
-		plt.plot(self.dist_list, color=color)
+		if len(self.dist_list) > 150:
+			ind = np.linspace(0, len(self.dist_list) - 1, num=150).astype('int32')
+			points = np.array(self.dist_list)[ind]
+		else:
+			points = np.array(self.dist_list)
+		plt.plot(points[:, 1], points[:, 0], color=color)
 		controller_name = '(PP Controller)'
 		fig.suptitle('crosstrack error ' + controller_name, fontsize=16)
-		plt.xlabel('timestep #')
+		plt.xlabel('time (s)')
 		plt.ylabel('distance (m)', color=color)
 		plt.savefig('PP_crosstrack_error.jpg')
 		plt.close()
@@ -293,10 +318,15 @@ class pp_lane_controller(object):
 	def plot_angle_error(self):
 		fig = plt.figure()
 		color = 'tab:green'
-		plt.plot(self.angle_list, color=color)
+		if len(self.angle_list) > 350:
+			ind = np.linspace(0, len(self.angle_list) - 1, num=350).astype('int32')
+			points = np.array(self.angle_list)[ind]
+		else:
+			points = np.array(self.angle_list)
+		plt.plot(points[:, 1], points[:, 0], color=color)
 		controller_name = '(PP Controller)'
 		fig.suptitle('angle error ' + controller_name, fontsize=16)
-		plt.xlabel('timestep #')
+		plt.xlabel('time (s)')
 		plt.ylabel('angle (rad)', color=color)
 		plt.savefig('PP_angle_error.jpg')
 		plt.close()
@@ -304,10 +334,15 @@ class pp_lane_controller(object):
 	def plot_velocities(self):
 		fig = plt.figure()
 		color = 'tab:green'
-		plt.plot(self.commanded_v_list, color=color)
+		if len(self.commanded_v_list) > 350:
+			ind = np.linspace(0, len(self.commanded_v_list) - 1, num=350).astype('int32')
+			points = np.array(self.commanded_v_list)[ind]
+		else:
+			points = np.array(self.commanded_v_list)
+		plt.plot(points[:, 1], points[:, 0], color=color)
 		controller_name = '(PP Controller)'
 		fig.suptitle('commanded velocities ' + controller_name, fontsize=16)
-		plt.xlabel('timestep #')
+		plt.xlabel('time (s)')
 		plt.ylabel('v', color=color)
 		plt.savefig('PP_velocities.jpg')
 		plt.close()
@@ -315,14 +350,19 @@ class pp_lane_controller(object):
 	def plot_angular_velocities(self):
 		fig = plt.figure()
 		color = 'tab:blue'
-		plt.plot(self.commanded_w_list, color=color)
+		if len(self.commanded_w_list) > 350:
+			ind = np.linspace(0, len(self.commanded_w_list) - 1, num=350).astype('int32')
+			points = np.array(self.commanded_w_list)[ind]
+		else:
+			points = np.array(self.commanded_w_list)
+		plt.plot(points[:, 1], points[:, 0], color=color)
 		controller_name = '(PP Controller)'
 		fig.suptitle('commanded angular velocities ' + controller_name, fontsize=16)
-		plt.xlabel('timestep #')
+		plt.xlabel('time (s)')
 		plt.ylabel('omega', color=color)
 		plt.savefig('PP_angular_velocities.jpg')
 		plt.close()
-
+	
 if __name__ == "__main__":
 
 	rospy.init_node("pp_lane_controller", anonymous=False)
