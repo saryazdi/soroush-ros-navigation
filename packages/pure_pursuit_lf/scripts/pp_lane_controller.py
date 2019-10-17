@@ -21,7 +21,7 @@ class pp_lane_controller(object):
 		self.lane_width = 0.4
 		self.lookahead_distance = 0.25
 		self.v = 0.4
-		self.omega_gain = 2.8
+		self.omega_gain = 2.5
 		self.momentum = 0.8
 		self.plotted = False
 
@@ -176,13 +176,13 @@ class pp_lane_controller(object):
 		self.commanded_w_list.append([omega, t - self.start_time])
 		self.commanded_v_list.append([v, t - self.start_time])
 
-		# if (self.verbose) and (len(self.commanded_v_list) > 3) and (len(self.dist_list) > 3):
-		# 	if ((time.time() - self.t_error_publish) > 10):
-		# 		self.plotErrors()
-		# 		self.t_error_publish = time.time()
-		# 		self.plotted = True
-		# 	if self.plotted:
-		# 		self.publishErrors()
+		if (self.verbose) and (len(self.commanded_v_list) > 3) and (len(self.dist_list) > 3):
+			if ((time.time() - self.t_error_publish) > 25):
+				self.plotErrors()
+				self.t_error_publish = time.time()
+				self.plotted = True
+			if self.plotted:
+				self.publishErrors()
 		
 		car_cmd_msg = Twist2DStamped()
 		car_cmd_msg.header = gp_segment_list.header
