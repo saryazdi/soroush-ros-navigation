@@ -23,24 +23,21 @@ class pp_lane_controller(object):
 		self.node_name = rospy.get_name()
 
 		self.gp_segment_list = None
-		self.lane_pose = None
 		self.ground_image = None
 		self.min_val = 100
 		self.max_val = -100
 		self.lane_width = 0.4
-		self.lookup_distance = 0.25
-		self.v = 0.3
+		self.lookahead_distance = 0.25
+		self.v = 0.4
 		self.omega_gain = 1
 		# self.omega_gain = 2
 		self.temp = 2
+		self.momentum = 0.8
 
 		self.dist_list = []
 		self.angle_list = []
 		self.commanded_v_list = []
 		self.commanded_w_list = []
-		self.white_buffer_list = []
-		self.yellow_buffer_list = []
-		self.buffer_time = 0.4 / self.v
 
 		self.verbose = rospy.get_param('~verbose', False)
 
@@ -86,7 +83,6 @@ class pp_lane_controller(object):
 		white_points_p1 = []
 		yellow_points_p0 = []
 		yellow_points_p1 = []
-		t = time.time()
 		if self.gp_segment_list is not None:
 			for segment in self.gp_segment_list.segments:
 				color = segment.color
@@ -97,37 +93,21 @@ class pp_lane_controller(object):
 				if (color == Segment.WHITE):
 					white_points_p0.append(p0)
 					white_points_p1.append(p1)
-					self.white_buffer_list.append([p0, t])
-					self.white_buffer_list.append([p1, t])
 				elif (color == Segment.YELLOW):
 					yellow_points_p0.append(p0)
 					yellow_points_p1.append(p1)
-					self.yellow_buffer_list.append([p0, t])
-					self.yellow_buffer_list.append([p1, t])
 				else:
 					pass
 
 		# Initializing some variables
 		white_points_p0 = np.array(white_points_p0)
 		white_points_p1 = np.array(white_points_p1)
+		white_points = np.vstack([white_points_p0, white_points_p1])
 		yellow_points_p0 = np.array(yellow_points_p0)
 		yellow_points_p1 = np.array(yellow_points_p1)
+		yellow_points = np.vstack([yellow_points_p0, yellow_points_p1])
 		num_yellow = yellow_points_p0.shape[0]
 		num_white = white_points_p0.shape[0]
-		
-		# self.loginfo('num_yellow: %s' % str(num_yellow))
-		# self.loginfo('num_white: %s' % str(num_white))
-		if len(self.white_buffer_list) != 0:
-			self.white_buffer_list = [x for x in self.white_buffer_list if (time.time() - x[1]) <= self.buffer_time]
-			white_weights = [np.exp(self.temp * (x[1] - t)) for x in self.white_buffer_list]
-			white_weights = np.array(white_weights)
-			white_weights /= np.sum(white_weights)
-		
-		if len(self.yellow_buffer_list) != 0:
-			self.yellow_buffer_list = [x for x in self.yellow_buffer_list if (time.time() - x[1]) <= self.buffer_time]
-			yellow_weights = [np.exp(self.temp * (x[1] - t)) for x in self.yellow_buffer_list]
-			yellow_weights = np.array(yellow_weights)
-			yellow_weights /= np.sum(yellow_weights)
 
 		if self.not_moving:
 			car_cmd_msg = Twist2DStamped()
@@ -143,6 +123,15 @@ class pp_lane_controller(object):
 
 		# fix normal direction & compute lane width
 		# pairwise_dists = self._pairwiseDists(white_points_p0, yellow_point_samples)
+		filtered_white = np.zeros(1)
+		filtered_yellow = np.zeros(1)
+
+		if (num_white > 0):
+			filtered_white = white_points[np.linalg.norm(white_points, axis=1) < 0.7]
+		if (num_yellow > 0):
+			filtered_yellow = yellow_points[np.linalg.norm(yellow_points, axis=1) < 0.7]
+		if (filtered_white.shape[0] > 2) and (filtered_yellow.shape[0] > 2):
+			self.lane_width = ((1 - self.momentum) * (np.mean(filtered_yellow[:,1]) - np.mean(filtered_white[:,1]))) + (self.momentum * self.lane_width)
 
 		half_lane_width = 0.5 * self.lane_width
 		
@@ -155,45 +144,43 @@ class pp_lane_controller(object):
 		white_path_points = None
 
 		if num_white > 0:
-			p0_path_points = white_points_p0 + np.array([0, half_lane_width])
-			p1_path_points = white_points_p1 + np.array([0, half_lane_width])
-			white_path_points = np.vstack([p0_path_points, p1_path_points])
-			min_val = np.min(white_points_p0)
-			max_val = np.max(white_points_p0)
+			if (filtered_white.shape[0] > 2):
+				white_path_points = filtered_white + np.array([0, half_lane_width])
+			else:
+				white_path_points = white_points + np.array([0, half_lane_width])
+			min_val = np.min(white_points)
+			max_val = np.max(white_points)
 
 		if num_yellow > 0:
-			p0_path_points = yellow_points_p0 - np.array([0, half_lane_width])
-			p1_path_points = yellow_points_p1 - np.array([0, half_lane_width])
-			yellow_path_points = np.vstack([p0_path_points, p1_path_points])
-			min_val = np.min(yellow_points_p0)
-			max_val = np.max(yellow_points_p1)
+			if (filtered_yellow.shape[0] > 2):
+				yellow_path_points = filtered_yellow - np.array([0, half_lane_width])
+			else:
+				yellow_path_points = yellow_points - np.array([0, half_lane_width])
+			min_val = np.min(yellow_points)
+			max_val = np.max(yellow_points)
 		
 		if yellow_path_points is not None:
 			target_point = np.mean(yellow_path_points, axis=0)
-
+			trajectory_points = yellow_path_points
 		elif white_path_points is not None:
 			target_point = np.mean(white_path_points, axis=0)
-
+			trajectory_points = white_path_points
 		else:
 			return
-		
-		# find closest point to lookup distance
-		# target_point_ind = self.findTargetPoint(path_points)
 
-
-		# follow_dist = np.linalg.norm(path_points[target_point_ind])
-		follow_dist = np.linalg.norm(target_point)
-		# v, omega = self.pure_pursuit(path_points[target_point_ind], self.lane_pose.d, self.lane_pose.phi, follow_dist=follow_dist)
-		v, omega = self.pure_pursuit(target_point, np.array([0, 0]), np.pi / 2, follow_dist=follow_dist)
+		heuristic0 = (1 + (np.std(trajectory_points[:,0]))) ** 3
+		heuristic1 = 1. / (1 + np.std(trajectory_points[:,1])) ** 3
+		# ind_highest = np.argmax(trajectory_points[:,0])
+		# future_ref = abs(trajectory_points[ind_highest, 1])
+		lookahead_distance = self.lookahead_distance * heuristic0 * heuristic1
+		# lookahead_distance = self.lookahead_distance / ((1 + future_ref) ** 2)
+		# self.loginfo('lookahead_distance %s' % str(lookahead_distance))
+		target_point = target_point * lookahead_distance / np.linalg.norm(target_point)
+		v, omega = self.pure_pursuit(target_point, np.array([0, 0]), np.pi / 2, follow_dist=lookahead_distance)
 
 		# Compute crostrack and angle error
-		if self.lane_pose is not None:
-			dist_error = self.lane_pose.d
-			angle_error = self.lane_pose.phi
-			self.dist_list.append(dist_error)
-			self.angle_list.append(angle_error)
-			self.commanded_w_list.append(omega)
-			self.commanded_v_list.append(v)
+		self.commanded_w_list.append(omega)
+		self.commanded_v_list.append(v)
 
 		car_cmd_msg = Twist2DStamped()
 		car_cmd_msg.header = gp_segment_list.header
@@ -208,12 +195,6 @@ class pp_lane_controller(object):
 			min_val = self.min_val
 			max_val = self.max_val
 
-			# for point in path_points:
-			# 	i, j = self.point2pixel(point, img_size, min_val, max_val)
-
-			# 	self.ground_image[i-1:i+1, j-1:j+1, 1] = 255
-			# 	# if point[0] < 0:
-			# 	#     self.ground_image[i-3:i+3, j-3:j+3, 2] = 255
 			# Target point
 			i, j = self.point2pixel(target_point, img_size, min_val, max_val)
 			self.ground_image[i-4:i+4, j-4:j+4, 2] = 255
@@ -235,24 +216,6 @@ class pp_lane_controller(object):
 			if self.ground_image is not None:
 				image_msg_out = self.bridge.cv2_to_imgmsg(self.ground_image, "bgr8")
 				self.pub_path_points.publish(image_msg_out)
-
-	def encounteringLineHeadOn(self, white_points_p0, n_hat, t_hat):
-		# closest_white_ind = np.argmin(np.linalg.norm(white_points_p0, axis=1))
-		# abs_pairwise_angles = abs(t_hat[closest_white_ind].dot(t_hat.T))
-		# angle_thresh = 0.4
-		# count_thresh = 0.3
-		# # if (np.mean(abs_pairwise_angles < 0.1) > thresh) and (np.mean(abs_pairwise_angles > 0.9) > thresh):
-		# # white_points_x_avg = np.mean(white_points_p0[:, 0])
-		# # white_points_x_std = np.std(white_points_p0[:, 0])
-		# # white_points_spread = np.mean(abs(white_points_p0[:,0] - white_points_x_avg) > 0.2)
-		# # spread_thresh = 0.4
-		# return np.mean(abs_pairwise_angles < angle_thresh) > count_thresh
-
-		white_points_norms = np.linalg.norm(white_points_p0, axis=1)
-		closest_white_ind = np.argmin(white_points_norms)
-		closest_point_vec = white_points_p0[closest_white_ind] / white_points_norms[closest_white_ind]
-		# avg_white_points = np.mean(white_points_p0, axis=0)
-		return (closest_point_vec.dot(np.array([1, 0])) > 0.9)
 
 	def point2pixel(self, point, img_size, min_val, max_val):
 		i = img_size - int((point[0] - min_val) * img_size / (max_val - min_val))
@@ -277,11 +240,9 @@ class pp_lane_controller(object):
 		dists = np.sqrt((mat1_magnitude + mat2_magnitude) - (2*TrTe))
 		return dists
 
-	def _mat2angles(self, mat):
-		return np.arctan2(mat[:,1], mat[:,0])
-
 	def updatePose(self, lane_pose):
-		self.lane_pose = lane_pose
+		self.dist_list.append(lane_pose.d)
+		self.angle_list.append(lane_pose.phi)
 
 	def pure_pursuit(self, curve_point, pos, angle, follow_dist=0.25):
 		omega = 0.
@@ -361,28 +322,6 @@ class pp_lane_controller(object):
 		plt.ylabel('omega', color=color)
 		plt.savefig('PP_angular_velocities.jpg')
 		plt.close()
-
-class Timer():
-	def __init__(self, time_amount, thresh_time=None):
-		self.time_amount = time_amount
-		self.start_time = None
-		self.thresh_time = thresh_time
-
-	def startTimer(self):
-		if not self.running():
-			self.start_time = time.time()
-	
-	def running(self):
-		if self.start_time is None:
-			return False
-		return (time.time() - self.start_time) < self.time_amount
-	
-	def pastThreshTime(self):
-		if self.thresh_time is None:
-			return
-		if not self.running():
-			return False
-		return (time.time() - self.start_time) > self.thresh_time
 
 if __name__ == "__main__":
 
