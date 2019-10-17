@@ -7,7 +7,9 @@ import cv2
 from duckietown_msgs.msg import Twist2DStamped, LanePose, Segment, SegmentList
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use('agg')
 
 class pp_lane_controller(object):
 
@@ -177,7 +179,7 @@ class pp_lane_controller(object):
 		self.commanded_v_list.append([v, t - self.start_time])
 
 		if (self.verbose) and (len(self.commanded_v_list) > 3) and (len(self.dist_list) > 3):
-			if ((time.time() - self.t_error_publish) > 25):
+			if ((time.time() - self.t_error_publish) > 10):
 				self.plotErrors()
 				self.t_error_publish = time.time()
 				self.plotted = True
