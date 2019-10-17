@@ -20,10 +20,8 @@ class pp_lane_controller(object):
 		self.max_val = -100
 		self.lane_width = 0.4
 		self.lookahead_distance = 0.25
-		self.v = 0.5
-		self.omega_gain = 3
-		# self.omega_gain = 2
-		self.temp = 2
+		self.v = 0.4
+		self.omega_gain = 2.8
 		self.momentum = 0.8
 		self.plotted = False
 
@@ -178,13 +176,13 @@ class pp_lane_controller(object):
 		self.commanded_w_list.append([omega, t - self.start_time])
 		self.commanded_v_list.append([v, t - self.start_time])
 
-		if (self.verbose) and (len(self.commanded_v_list) > 0) and (len(self.dist_list) > 0):
-			if ((time.time() - self.t_error_publish) > 10):
-				self.plotErrors()
-				self.t_error_publish = time.time()
-				self.plotted = True
-			if self.plotted:
-				self.publishErrors()
+		# if (self.verbose) and (len(self.commanded_v_list) > 3) and (len(self.dist_list) > 3):
+		# 	if ((time.time() - self.t_error_publish) > 10):
+		# 		self.plotErrors()
+		# 		self.t_error_publish = time.time()
+		# 		self.plotted = True
+		# 	if self.plotted:
+		# 		self.publishErrors()
 		
 		car_cmd_msg = Twist2DStamped()
 		car_cmd_msg.header = gp_segment_list.header
@@ -362,6 +360,18 @@ class pp_lane_controller(object):
 		plt.ylabel('omega', color=color)
 		plt.savefig('/data/log/PP_angular_velocities.jpg')
 		plt.close()
+	
+	def plot2image(self, plot):
+		fig = Figure()
+		canvas = FigureCanvas(fig)
+		ax = fig.gca()
+
+		ax.text(0.0,0.0,"Test", fontsize=45)
+		ax.axis('off')
+
+		canvas.draw()       # draw the canvas, cache the renderer
+
+		image = np.fromstring(canvas.tostring_rgb(), dtype='uint8')
 	
 if __name__ == "__main__":
 
