@@ -291,10 +291,10 @@ class pp_lane_controller(object):
 		self.plot_angular_velocities()
 
 	def publishErrors(self):
-		self.pub_cross_track.publish(self.imreadAndBridge('PP_crosstrack_error.jpg'))
-		self.pub_angle_error.publish(self.imreadAndBridge('PP_angle_error.jpg'))
-		self.pub_velocities.publish(self.imreadAndBridge('PP_velocities.jpg'))
-		self.pub_angular_velocities.publish(self.imreadAndBridge('PP_angular_velocities.jpg'))
+		self.pub_cross_track.publish(self.imreadAndBridge('/data/log/PP_crosstrack_error.jpg'))
+		self.pub_angle_error.publish(self.imreadAndBridge('/data/log/PP_angle_error.jpg'))
+		self.pub_velocities.publish(self.imreadAndBridge('/data/log/PP_velocities.jpg'))
+		self.pub_angular_velocities.publish(self.imreadAndBridge('/data/log/PP_angular_velocities.jpg'))
 
 	def imreadAndBridge(self, img_loc):
 		return self.bridge.cv2_to_imgmsg(cv2.imread(img_loc), "bgr8")
@@ -312,7 +312,7 @@ class pp_lane_controller(object):
 		fig.suptitle('crosstrack error ' + controller_name, fontsize=16)
 		plt.xlabel('time (s)')
 		plt.ylabel('distance (m)', color=color)
-		plt.savefig('PP_crosstrack_error.jpg')
+		plt.savefig('/data/log/PP_crosstrack_error.jpg')
 		plt.close()
 
 	def plot_angle_error(self):
@@ -328,7 +328,7 @@ class pp_lane_controller(object):
 		fig.suptitle('angle error ' + controller_name, fontsize=16)
 		plt.xlabel('time (s)')
 		plt.ylabel('angle (rad)', color=color)
-		plt.savefig('PP_angle_error.jpg')
+		plt.savefig('/data/log/PP_angle_error.jpg')
 		plt.close()
 
 	def plot_velocities(self):
@@ -344,7 +344,7 @@ class pp_lane_controller(object):
 		fig.suptitle('commanded velocities ' + controller_name, fontsize=16)
 		plt.xlabel('time (s)')
 		plt.ylabel('v', color=color)
-		plt.savefig('PP_velocities.jpg')
+		plt.savefig('/data/log/PP_velocities.jpg')
 		plt.close()
 	
 	def plot_angular_velocities(self):
@@ -360,7 +360,7 @@ class pp_lane_controller(object):
 		fig.suptitle('commanded angular velocities ' + controller_name, fontsize=16)
 		plt.xlabel('time (s)')
 		plt.ylabel('omega', color=color)
-		plt.savefig('PP_angular_velocities.jpg')
+		plt.savefig('/data/log/PP_angular_velocities.jpg')
 		plt.close()
 	
 if __name__ == "__main__":
