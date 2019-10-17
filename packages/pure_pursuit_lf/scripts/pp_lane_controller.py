@@ -518,11 +518,12 @@ class pp_lane_controller(object):
 	def pure_pursuit(self, curve_point, pos, angle, follow_dist=0.25):
 		omega = 0.
 		v = self.v
+		# omega = 2 * v * np.sin(alpha) / follow_dist
 		if curve_point is not None:
 			path_dir = curve_point - pos
 			path_dir /= np.linalg.norm(path_dir)
 			alpha = angle - self._vec2angle2(path_dir)
-			omega = 2 * v * np.sin(alpha) / follow_dist
+			omega = 2 * np.sin(alpha) / follow_dist
 		return v, omega
 		
 	def custom_shutdown(self):
