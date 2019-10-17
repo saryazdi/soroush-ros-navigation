@@ -35,7 +35,8 @@ class pp_lane_controller(object):
 		self.lookup_distance = 0.25
 		self.num_yellow_subsamples = 100
 		self.num_white_subsamples = 100
-		self.v = 0.3
+		self.v = 0.2
+		self.omega_gain = 2
 
 		right_turn_time = 0.6 / self.v
 		left_turn_time = 0.6 / self.v
@@ -518,12 +519,11 @@ class pp_lane_controller(object):
 	def pure_pursuit(self, curve_point, pos, angle, follow_dist=0.25):
 		omega = 0.
 		v = self.v
-		# omega = 2 * v * np.sin(alpha) / follow_dist
 		if curve_point is not None:
 			path_dir = curve_point - pos
 			path_dir /= np.linalg.norm(path_dir)
 			alpha = angle - self._vec2angle2(path_dir)
-			omega = 2 * np.sin(alpha) / follow_dist
+			omega = self.omega_gain * 2 * v * np.sin(alpha) / follow_dist
 		return v, omega
 		
 	def custom_shutdown(self):
