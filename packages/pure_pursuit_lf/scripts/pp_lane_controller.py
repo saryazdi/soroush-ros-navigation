@@ -21,7 +21,7 @@ class pp_lane_controller(object):
 		self.lane_width = 0.4
 		self.lookahead_distance = 0.25
 		self.v = 0.4
-		self.omega_gain = 2.5
+		self.omega_gain = 2.2
 		self.momentum = 0.8
 
 		self.dist_list = []
@@ -316,8 +316,8 @@ class pp_lane_controller(object):
 		self.saveArray(points, '/data/log/PP_angular_velocities.txt')
 	
 	def saveArray(self, arr, filename):
-		if os.path.exists(filename):
-			os.remove(filename)
+		# if os.path.exists(filename):
+		# 	os.remove(filename)
 		with open(filename, 'w') as f:
 			for x in arr:
 				f.write("%s, " % str(x[0]))
