@@ -8,7 +8,7 @@ from duckietown_msgs.msg import Twist2DStamped, LanePose, Segment, SegmentList
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 # import matplotlib
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 # matplotlib.use('agg')
 import os
 os.environ['QT_QPA_PLATFORM']='offscreen'
