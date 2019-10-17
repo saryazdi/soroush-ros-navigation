@@ -28,10 +28,9 @@ class pp_lane_controller(object):
 		self.lane_pose = None
 		self.ground_image = None
 		self.white_line_orientation = 'RIGHT'
-		self.lane_width = 0.23
 		self.min_val = 100
 		self.max_val = -100
-		self.lane_width = 0.23
+		self.lane_width = 0.4
 		self.lookup_distance = 0.25
 		self.num_yellow_subsamples = 100
 		self.num_white_subsamples = 100
@@ -548,7 +547,7 @@ class pp_lane_controller(object):
 		if self.verbose:
 			self.sub_lines.unregister()
 
-		rospy.sleep(0.5)    #To make sure that it gets published.
+		rospy.sleep(5)    #To make sure that it gets published.
 		rospy.loginfo("[%s] Shutdown" % self.node_name)
 	
 	def loginfo(self, s):
