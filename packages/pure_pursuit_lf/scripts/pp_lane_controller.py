@@ -7,12 +7,7 @@ import cv2
 from duckietown_msgs.msg import Twist2DStamped, LanePose, Segment, SegmentList
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-# import matplotlib
-import matplotlib.pyplot as plt
-# matplotlib.use('agg')
 import os
-os.environ['QT_QPA_PLATFORM']='offscreen'
-
 
 class pp_lane_controller(object):
 
@@ -28,7 +23,6 @@ class pp_lane_controller(object):
 		self.v = 0.4
 		self.omega_gain = 2.5
 		self.momentum = 0.8
-		self.plotted = False
 
 		self.dist_list = []
 		self.angle_list = []
@@ -43,10 +37,6 @@ class pp_lane_controller(object):
 			self.bridge = CvBridge()
 			# publishers
 			self.pub_path_points = rospy.Publisher("~path_points", Image, queue_size=1)
-			self.pub_cross_track = rospy.Publisher("~crosstrack_error", Image, queue_size=1)
-			self.pub_angle_error = rospy.Publisher("~angle_error", Image, queue_size=1)
-			self.pub_velocities = rospy.Publisher("~velocities", Image, queue_size=1)
-			self.pub_angular_velocities = rospy.Publisher("~angular_velocities", Image, queue_size=1)
 
 		self.not_moving = True
 
@@ -183,11 +173,8 @@ class pp_lane_controller(object):
 
 		if (self.verbose) and (len(self.commanded_v_list) > 3) and (len(self.dist_list) > 3):
 			if ((time.time() - self.t_error_publish) > 10):
-				self.plotErrors()
+				self.saveErrors()
 				self.t_error_publish = time.time()
-				self.plotted = True
-			if self.plotted:
-				self.publishErrors()
 		
 		car_cmd_msg = Twist2DStamped()
 		car_cmd_msg.header = gp_segment_list.header
@@ -265,10 +252,10 @@ class pp_lane_controller(object):
 	def custom_shutdown(self):
 		rospy.loginfo("[%s] Shutting down..." % self.node_name)
 
-		self.plot_crosstrack_error()
-		self.plot_angle_error()
-		self.plot_velocities()
-		self.plot_angular_velocities()
+		self.save_crosstrack_error()
+		self.save_angle_error()
+		self.save_velocities()
+		self.save_angular_velocities()
 
 		# Stop the duckie
 		car_cmd_msg = Twist2DStamped()
@@ -287,97 +274,55 @@ class pp_lane_controller(object):
 	def loginfo(self, s):
 		rospy.loginfo('[%s] %s' % (self.node_name, s))
 	
-	def plotErrors(self):
-		self.plot_crosstrack_error()
-		self.plot_angle_error()
-		self.plot_velocities()
-		self.plot_angular_velocities()
-
-	def publishErrors(self):
-		self.pub_cross_track.publish(self.imreadAndBridge('/data/log/PP_crosstrack_error.jpg'))
-		self.pub_angle_error.publish(self.imreadAndBridge('/data/log/PP_angle_error.jpg'))
-		self.pub_velocities.publish(self.imreadAndBridge('/data/log/PP_velocities.jpg'))
-		self.pub_angular_velocities.publish(self.imreadAndBridge('/data/log/PP_angular_velocities.jpg'))
+	def saveErrors(self):
+		self.save_crosstrack_error()
+		self.save_angle_error()
+		self.save_velocities()
+		self.save_angular_velocities()
 
 	def imreadAndBridge(self, img_loc):
 		return self.bridge.cv2_to_imgmsg(cv2.imread(img_loc), "bgr8")
 
-	def plot_crosstrack_error(self):
-		fig = plt.figure()
-		color = 'tab:blue'
+	def save_crosstrack_error(self):
 		if len(self.dist_list) > 150:
 			ind = np.linspace(0, len(self.dist_list) - 1, num=150).astype('int32')
 			points = np.array(self.dist_list)[ind]
 		else:
 			points = np.array(self.dist_list)
-		plt.plot(points[:, 1], points[:, 0], color=color)
-		controller_name = '(PP Controller)'
-		fig.suptitle('crosstrack error ' + controller_name, fontsize=16)
-		plt.xlabel('time (s)')
-		plt.ylabel('distance (m)', color=color)
-		plt.savefig('/data/log/PP_crosstrack_error.jpg')
-		plt.close()
+		self.saveArray(points, '/data/log/PP_crosstrack_error.txt')
 
-	def plot_angle_error(self):
-		fig = plt.figure()
-		color = 'tab:green'
+	def save_angle_error(self):
 		if len(self.angle_list) > 350:
 			ind = np.linspace(0, len(self.angle_list) - 1, num=350).astype('int32')
 			points = np.array(self.angle_list)[ind]
 		else:
 			points = np.array(self.angle_list)
-		plt.plot(points[:, 1], points[:, 0], color=color)
-		controller_name = '(PP Controller)'
-		fig.suptitle('angle error ' + controller_name, fontsize=16)
-		plt.xlabel('time (s)')
-		plt.ylabel('angle (rad)', color=color)
-		plt.savefig('/data/log/PP_angle_error.jpg')
-		plt.close()
+		self.saveArray(points, '/data/log/PP_angle_error.txt')
 
-	def plot_velocities(self):
-		fig = plt.figure()
-		color = 'tab:green'
+	def save_velocities(self):
 		if len(self.commanded_v_list) > 350:
 			ind = np.linspace(0, len(self.commanded_v_list) - 1, num=350).astype('int32')
 			points = np.array(self.commanded_v_list)[ind]
 		else:
 			points = np.array(self.commanded_v_list)
-		plt.plot(points[:, 1], points[:, 0], color=color)
-		controller_name = '(PP Controller)'
-		fig.suptitle('commanded velocities ' + controller_name, fontsize=16)
-		plt.xlabel('time (s)')
-		plt.ylabel('v', color=color)
-		plt.savefig('/data/log/PP_velocities.jpg')
-		plt.close()
+		self.saveArray(points, '/data/log/PP_velocities.txt')
 	
-	def plot_angular_velocities(self):
-		fig = plt.figure()
-		color = 'tab:blue'
+	def save_angular_velocities(self):
 		if len(self.commanded_w_list) > 350:
 			ind = np.linspace(0, len(self.commanded_w_list) - 1, num=350).astype('int32')
 			points = np.array(self.commanded_w_list)[ind]
 		else:
 			points = np.array(self.commanded_w_list)
-		plt.plot(points[:, 1], points[:, 0], color=color)
-		controller_name = '(PP Controller)'
-		fig.suptitle('commanded angular velocities ' + controller_name, fontsize=16)
-		plt.xlabel('time (s)')
-		plt.ylabel('omega', color=color)
-		plt.savefig('/data/log/PP_angular_velocities.jpg')
-		plt.close()
+		self.saveArray(points, '/data/log/PP_angular_velocities.txt')
 	
-	def plot2image(self, plot):
-		fig = Figure()
-		canvas = FigureCanvas(fig)
-		ax = fig.gca()
+	def saveArray(self, arr, filename):
+		if os.path.exists(filename):
+			os.remove(filename)
+		with open(filename, 'w') as f:
+			for x in arr:
+				f.write("%s, " % str(x[0]))
+				f.write("%s\n" % str(x[1]))
 
-		ax.text(0.0,0.0,"Test", fontsize=45)
-		ax.axis('off')
-
-		canvas.draw()       # draw the canvas, cache the renderer
-
-		image = np.fromstring(canvas.tostring_rgb(), dtype='uint8')
-	
 if __name__ == "__main__":
 
 	rospy.init_node("pp_lane_controller", anonymous=False)
