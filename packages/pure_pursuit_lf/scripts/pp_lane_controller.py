@@ -29,7 +29,7 @@ class pp_lane_controller(object):
 		self.lane_width = 0.4
 		self.lookahead_distance = 0.25
 		self.v = 0.4
-		self.omega_gain = 1
+		self.omega_gain = 2
 		# self.omega_gain = 2
 		self.temp = 2
 		self.momentum = 0.8
