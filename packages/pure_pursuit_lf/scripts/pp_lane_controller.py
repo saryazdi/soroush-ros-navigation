@@ -21,7 +21,7 @@ class pp_lane_controller(object):
 		self.lane_width = 0.4
 		self.lookahead_distance = 0.25
 		self.v = 0.45
-		self.omega_gain = 2
+		self.omega_gain = 3
 		self.momentum = 0.8
 
 		self.dist_list = []
@@ -156,13 +156,9 @@ class pp_lane_controller(object):
 		else:
 			return
 
-		heuristic0 = (1 + (np.std(trajectory_points[:,0]))) ** 4 # if we have a lot of variance in forward direction, correct less
-		heuristic1 = 1. / (1 + np.std(trajectory_points[:,1])) ** 2 # if we have a lot of variance in right/left direction, correct more
-		# ind_highest = np.argmax(trajectory_points[:,0])
-		# future_ref = abs(trajectory_points[ind_highest, 1])
+		heuristic0 = (1 + (np.std(trajectory_points[:,0]))) ** 3 # if we have a lot of variance in forward direction, correct less
+		heuristic1 = 1. / (1 + np.std(trajectory_points[:,1])) ** 3 # if we have a lot of variance in right/left direction, correct more
 		lookahead_distance = self.lookahead_distance * heuristic0 * heuristic1
-		# lookahead_distance = self.lookahead_distance / ((1 + future_ref) ** 2)
-		# self.loginfo('lookahead_distance %s' % str(lookahead_distance))
 		target_point = target_point * lookahead_distance / np.linalg.norm(target_point)
 		v, omega = self.pure_pursuit(target_point, np.array([0, 0]), np.pi / 2, follow_dist=lookahead_distance)
 
