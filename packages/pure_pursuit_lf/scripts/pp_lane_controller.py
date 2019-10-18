@@ -20,8 +20,8 @@ class pp_lane_controller(object):
 		self.max_val = -100
 		self.lane_width = 0.4
 		self.lookahead_distance = 0.25
-		self.v = 0.44
-		self.omega_gain = 3
+		self.v = 0.45
+		self.omega_gain = 2
 		self.momentum = 0.8
 
 		self.dist_list = []
