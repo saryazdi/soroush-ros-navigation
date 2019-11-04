@@ -13,16 +13,38 @@ class pp_lane_controller(object):
 
 	def __init__(self):
 		self.node_name = rospy.get_name()
+		self.node_namespace = rospy.get_namespace()
+		self.loginfo('NAMESPACE: %s' % str(self.node_namespace))
 
+		if self.node_namespace == '/default/':
+			# simulation parameters
+			self.loginfo('******************')
+			self.loginfo('**** SIM MODE ****')
+			self.loginfo('******************')
+			self.loginfo('Using simulation parameters for pure pursuit')
+			self.lane_width = 0.33
+			self.lookahead_distance = 0.25
+			self.v = 0.3
+			self.omega_gain = 1
+			self.momentum = 1.0
+		else:
+			# hardware parameters
+			self.loginfo('*********************')
+			self.loginfo('*** HARDWARE MODE ***')
+			self.loginfo('*********************')
+			self.loginfo('Using hardware parameters for pure pursuit')
+			self.lane_width = 0.4
+			self.lookahead_distance = 0.25
+			self.v = 0.45
+			self.omega_gain = 3
+			self.momentum = 1.0
+		
+		self.save_errors = False
 		self.gp_segment_list = None
 		self.ground_image = None
 		self.min_val = 100
 		self.max_val = -100
-		self.lane_width = 0.4
-		self.lookahead_distance = 0.25
-		self.v = 0.45
-		self.omega_gain = 3
-		self.momentum = 0.8
+		
 
 		self.dist_list = []
 		self.angle_list = []
@@ -90,7 +112,7 @@ class pp_lane_controller(object):
 					yellow_points_p1.append(p1)
 				else:
 					pass
-
+		
 		# Initializing some variables
 		white_points_p0 = np.array(white_points_p0)
 		white_points_p1 = np.array(white_points_p1)
@@ -167,7 +189,7 @@ class pp_lane_controller(object):
 		self.commanded_w_list.append([omega, t - self.start_time])
 		self.commanded_v_list.append([v, t - self.start_time])
 
-		if (self.verbose) and (len(self.commanded_v_list) > 3) and (len(self.dist_list) > 3):
+		if (self.save_errors) and (len(self.commanded_v_list) > 3) and (len(self.dist_list) > 3):
 			if ((time.time() - self.t_error_publish) > 10):
 				self.saveErrors()
 				self.t_error_publish = time.time()
@@ -247,11 +269,16 @@ class pp_lane_controller(object):
 		
 	def custom_shutdown(self):
 		rospy.loginfo("[%s] Shutting down..." % self.node_name)
+		
+		# log final lane width
+		self.loginfo('Final lanewidth: %s' % str(self.lane_width))
 
-		self.save_crosstrack_error()
-		self.save_angle_error()
-		self.save_velocities()
-		self.save_angular_velocities()
+		# save errors
+		if self.save_errors:
+			self.save_crosstrack_error()
+			self.save_angle_error()
+			self.save_velocities()
+			self.save_angular_velocities()
 
 		# Stop the duckie
 		car_cmd_msg = Twist2DStamped()
